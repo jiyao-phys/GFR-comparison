@@ -1,7 +1,6 @@
 import os
 import warnings
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -22,7 +21,6 @@ OOF_OUT = "out/atom/oxide0320/oof_results.xlsx"
 ROC_OUT = "out/atom/oxide0320/roc_data.xlsx"
 CONF_OUT = "out/atom/oxide0320/confusion_metrics.xlsx"
 METRICS_OUT = "out/atom/oxide0320/metrics_data.xlsx"
-METRICS_FIG = "out/atom/oxide0320/metrics_figure.png"
 
 RNG = 42
 N_SPLITS_FINAL = 10
@@ -389,7 +387,7 @@ def oof_counts_at_selected_threshold(y, proba):
     return pd.DataFrame([row])
 
 
-def make_plot_data(x, y, cv, roc_mean, roc_folds):
+def save_metrics_data(x, y, cv, roc_mean, roc_folds):
     lc_size, lc_train_mse, lc_test_mse = learning_curve_data(x, y)
     acc_mean, acc_std = accuracy_by_ratio(x, y)
 
@@ -473,190 +471,17 @@ def make_plot_data(x, y, cv, roc_mean, roc_folds):
         conf_agg.to_excel(writer, sheet_name=f"conf_agg_thr_{SELECTED_THRESHOLD}", index=False)
         conf_oof.to_excel(writer, sheet_name=f"oof_conf_thr_{SELECTED_THRESHOLD}", index=False)
 
-    print(f"Saved b-f data to {METRICS_OUT}")
-    return {
-        "lc_size": lc_size,
-        "lc_train_mse": lc_train_mse,
-        "lc_test_mse": lc_test_mse,
-        "acc_mean": acc_mean,
-        "acc_std": acc_std,
-        "rec_grid": rec_grid,
-        "mean_prec_train": mean_prec_train,
-        "std_prec_train": std_prec_train,
-        "mean_prec_test": mean_prec_test,
-        "std_prec_test": std_prec_test,
-        "thr": thr,
-        "mean_f1_train": mean_f1_train,
-        "std_f1_train": std_f1_train,
-        "mean_f1_test": mean_f1_test,
-        "std_f1_test": std_f1_test,
-        "thr_acc": thr_acc,
-        "mean_acc_train": mean_acc_train,
-        "std_acc_train": std_acc_train,
-        "mean_acc_test": mean_acc_test,
-        "std_acc_test": std_acc_test,
-    }
-
-
-def draw_metrics(y, cv, data):
-    plt.rcParams.update({"figure.figsize": (16, 10)})
-    fig, axs = plt.subplots(2, 3, figsize=(18, 10))
-
-    ax = axs[0, 0]
-    ax.plot(data["lc_size"], data["lc_train_mse"], label="training")
-    ax.plot(data["lc_size"], data["lc_test_mse"], label="test")
-    ax.set_xlabel("Training set size")
-    ax.set_ylabel("Mean squared error")
-    ax.set_title("(b) Learning curves")
-    ax.legend()
-    ax.grid(True)
-
-    ax = axs[0, 1]
-    ax.errorbar(RATIOS, data["acc_mean"], yerr=data["acc_std"], marker="o", linestyle="-")
-    ax.set_xlabel("Ratio of test to training set size")
-    ax.set_ylabel("Accuracy")
-    ax.set_title("(c) ACC vs test/train ratio")
-    ax.grid(True)
-    ax.axhline(max(np.mean(y == 0), np.mean(y == 1)), color="gray", linestyle="--", label="majority baseline")
-    ax.legend()
-
-    pred_oof = (cv["oof_proba"] >= SELECTED_THRESHOLD).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y, pred_oof, labels=[0, 1]).ravel()
-    recall_thr = safe_div(tp, tp + fn)
-    precision_thr = safe_div(tp, tp + fp)
-
-    ax = axs[0, 2]
-    ax.plot(data["rec_grid"], data["mean_prec_test"], label="test (mean)")
-    ax.fill_between(
-        data["rec_grid"],
-        data["mean_prec_test"] - data["std_prec_test"],
-        data["mean_prec_test"] + data["std_prec_test"],
-        alpha=0.2,
-    )
-    ax.plot(data["rec_grid"], data["mean_prec_train"], label="train (mean)")
-    ax.fill_between(
-        data["rec_grid"],
-        data["mean_prec_train"] - data["std_prec_train"],
-        data["mean_prec_train"] + data["std_prec_train"],
-        alpha=0.2,
-    )
-    ax.hlines(np.mean(y == 1), 0, 1, linestyles="--", label="random guess")
-    ax.scatter(
-        [recall_thr],
-        [precision_thr],
-        color="red",
-        zorder=10,
-        label=f"thr={SELECTED_THRESHOLD} (rec={recall_thr:.3f}, prec={precision_thr:.3f})",
-    )
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title("(d) Precision-Recall curves")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.legend()
-    ax.grid(True)
-
-    ax = axs[1, 0]
-    ax.plot(THR_GRID, data["mean_f1_train"], label="train")
-    ax.fill_between(
-        THR_GRID,
-        data["mean_f1_train"] - data["std_f1_train"],
-        data["mean_f1_train"] + data["std_f1_train"],
-        alpha=0.2,
-    )
-    ax.plot(THR_GRID, data["mean_f1_test"], label="test")
-    ax.fill_between(
-        THR_GRID,
-        data["mean_f1_test"] - data["std_f1_test"],
-        data["mean_f1_test"] + data["std_f1_test"],
-        alpha=0.2,
-    )
-    ax.axvline(SELECTED_THRESHOLD, color="gray", linestyle="--", linewidth=0.8)
-    ax.scatter(
-        [SELECTED_THRESHOLD],
-        [np.interp(SELECTED_THRESHOLD, THR_GRID, data["mean_f1_test"])],
-        color="red",
-        zorder=10,
-        label=f"thr={SELECTED_THRESHOLD}",
-    )
-    ax.set_xlabel("Threshold")
-    ax.set_ylabel("F1 score")
-    ax.set_title("(e) F1 score vs threshold")
-    ax.legend()
-    ax.grid(True)
-
-    fpr_thr = safe_div(fp, fp + tn)
-    tpr_thr = safe_div(tp, tp + fn)
-    matrix = cv["tpr_matrix"]
-
-    ax = axs[1, 1]
-    for i in range(matrix.shape[0]):
-        ax.plot(cv["fpr_grid"], matrix[i, :], color="lightgray", linewidth=0.8)
-    ax.plot(cv["fpr_grid"], np.mean(matrix, axis=0), label=f"mean ROC (AUC={np.mean(cv['aucs']):.3f})")
-    ax.fill_between(
-        cv["fpr_grid"],
-        np.mean(matrix, axis=0) - np.std(matrix, axis=0),
-        np.mean(matrix, axis=0) + np.std(matrix, axis=0),
-        alpha=0.2,
-    )
-    ax.plot([0, 1], [0, 1], "--", color="k", linewidth=0.8, label="random guess")
-    ax.scatter(
-        [fpr_thr],
-        [tpr_thr],
-        color="red",
-        zorder=10,
-        label=f"thr={SELECTED_THRESHOLD} (FPR={fpr_thr:.3f}, TPR={tpr_thr:.3f})",
-    )
-    ax.set_xlabel("FPR")
-    ax.set_ylabel("TPR")
-    ax.set_title("(f) ROC curves")
-    ax.legend()
-    ax.grid(True)
-
-    ax = axs[1, 2]
-    ax.plot(data["thr_acc"], data["mean_acc_train"], label="train")
-    ax.fill_between(
-        data["thr_acc"],
-        data["mean_acc_train"] - data["std_acc_train"],
-        data["mean_acc_train"] + data["std_acc_train"],
-        alpha=0.2,
-    )
-    ax.plot(data["thr_acc"], data["mean_acc_test"], label="test")
-    ax.fill_between(
-        data["thr_acc"],
-        data["mean_acc_test"] - data["std_acc_test"],
-        data["mean_acc_test"] + data["std_acc_test"],
-        alpha=0.2,
-    )
-    ax.axvline(SELECTED_THRESHOLD, color="gray", linestyle="--", linewidth=0.8)
-    ax.scatter(
-        [SELECTED_THRESHOLD],
-        [np.interp(SELECTED_THRESHOLD, data["thr_acc"], data["mean_acc_test"])],
-        color="red",
-        zorder=10,
-        label=f"thr={SELECTED_THRESHOLD}",
-    )
-    ax.set_xlabel("Threshold")
-    ax.set_ylabel("Accuracy")
-    ax.set_title("(g) Accuracy vs threshold")
-    ax.legend()
-    ax.grid(True)
-
-    plt.tight_layout()
-    plt.savefig(METRICS_FIG, dpi=200)
-    print(f"Saved metrics figure to {METRICS_FIG}")
-    plt.show()
+    print(f"Saved metrics data to {METRICS_OUT}")
 
 
 def main():
-    prepare_output_dirs(OOF_OUT, ROC_OUT, CONF_OUT, METRICS_OUT, METRICS_FIG)
+    prepare_output_dirs(OOF_OUT, ROC_OUT, CONF_OUT, METRICS_OUT)
     x, y = load_data(IN_FILE)
     cv = run_final_cv(x, y)
     save_oof(y, cv)
     roc_mean, roc_folds = save_roc(cv)
     save_confusion(y, cv)
-    plot_data = make_plot_data(x, y, cv, roc_mean, roc_folds)
-    draw_metrics(y, cv, plot_data)
+    save_metrics_data(x, y, cv, roc_mean, roc_folds)
 
 
 if __name__ == "__main__":
